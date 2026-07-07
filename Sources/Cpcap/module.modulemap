@@ -1,0 +1,5 @@
+module Cpcap [system] {
+    header "shim.h"
+    link "pcap"
+    export *
+}
