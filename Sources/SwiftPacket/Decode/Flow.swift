@@ -46,6 +46,14 @@ public struct Endpoint: Hashable, Sendable, CustomStringConvertible {
         return UInt16(bytes[0]) << 8 | UInt16(bytes[1])
     }
 
+    /// Byte-lexicographic ordering (shorter addresses first), used to
+    /// canonicalize flows into a direction-insensitive form.
+    static func precedes(_ lhs: Endpoint, _ rhs: Endpoint) -> Bool {
+        if lhs.bytes.count != rhs.bytes.count { return lhs.bytes.count < rhs.bytes.count }
+        for (left, right) in zip(lhs.bytes, rhs.bytes) where left != right { return left < right }
+        return false
+    }
+
     public var description: String {
         switch kind {
         case .mac:
@@ -115,8 +123,22 @@ public struct ConnectionKey: Hashable, Sendable, CustomStringConvertible {
     public let transport: Flow?
 
     public init(network: Flow, transport: Flow?) {
-        self.network = network.canonical
-        self.transport = transport?.canonical
+        // Canonicalize the network and transport flows *together* so both
+        // directions map equal AND each address stays paired with its own
+        // port. (Canonicalizing them independently could pair a source address
+        // with the peer's port when the two flows sort in opposite orders.)
+        let flip: Bool
+        if Endpoint.precedes(network.destination, network.source) {
+            flip = true
+        } else if network.source == network.destination,
+            let transport, Endpoint.precedes(transport.destination, transport.source)
+        {
+            flip = true
+        } else {
+            flip = false
+        }
+        self.network = flip ? network.reversed : network
+        self.transport = flip ? transport?.reversed : transport
     }
 
     public var description: String {

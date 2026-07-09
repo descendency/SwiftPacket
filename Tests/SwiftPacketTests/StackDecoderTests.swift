@@ -128,6 +128,27 @@ struct StackDecoderTests {
         #expect(stack.tcp?.destinationPort == 80)
     }
 
+    @Test("DecodedStack exposes flows, connection key, and checksum validity")
+    func ergonomics() throws {
+        // Serialize a real Ethernet/IPv4/UDP/DNS packet so the checksums are correct.
+        let base = Packet.decode(
+            Data(ProtocolTests.ethernetHeader + ProtocolTests.ipv4Header + ProtocolTests.udpHeader
+                + ProtocolTests.dnsQuery), startingAt: .ethernet, using: .standard)
+        let bytes = try base.serializedData()
+
+        var stack = DecodedStack()
+        StackDecoder().decode(bytes, startingAt: .ethernet, into: &stack)
+
+        #expect(stack.networkFlow?.source.description == "192.0.2.1")
+        #expect(stack.transportFlow?.destination.port == 53)
+        #expect(stack.connectionKey != nil)
+        // The connection key matches the boxed Packet path.
+        let reference = Packet.decode(bytes, startingAt: .ethernet, using: .standard)
+        #expect(stack.connectionKey == reference.connectionKey)
+        #expect(stack.isTransportChecksumValid == true)
+        #expect(stack.isNetworkChecksumValid == true)
+    }
+
     @Test("fast path and Packet.decode agree on many random packets")
     func fuzzParity() {
         let decoder = StackDecoder()

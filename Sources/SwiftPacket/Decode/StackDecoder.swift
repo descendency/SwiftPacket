@@ -67,6 +67,63 @@ public struct DecodedStack {
     public var ipProtocol: IPProtocol? {
         ipv4?.proto ?? ipv6?.nextHeader
     }
+
+    // MARK: - Flows (parity with `Packet`, without re-boxing)
+
+    /// The link-layer flow (source → destination MAC), if an Ethernet layer
+    /// was decoded.
+    public var linkFlow: Flow? {
+        guard let ethernet else { return nil }
+        return Flow(source: Endpoint(ethernet.source), destination: Endpoint(ethernet.destination))
+    }
+
+    /// The network-layer flow (source → destination IP).
+    public var networkFlow: Flow? {
+        if let ipv4 {
+            return Flow(source: Endpoint(ipv4.sourceAddress), destination: Endpoint(ipv4.destinationAddress))
+        }
+        if let ipv6 {
+            return Flow(source: Endpoint(ipv6.sourceAddress), destination: Endpoint(ipv6.destinationAddress))
+        }
+        return nil
+    }
+
+    /// The transport-layer flow (source → destination port), for TCP or UDP.
+    public var transportFlow: Flow? {
+        if let tcp {
+            return Flow(source: Endpoint(port: tcp.sourcePort), destination: Endpoint(port: tcp.destinationPort))
+        }
+        if let udp {
+            return Flow(source: Endpoint(port: udp.sourcePort), destination: Endpoint(port: udp.destinationPort))
+        }
+        return nil
+    }
+
+    /// A canonical bidirectional connection key, or `nil` without a network
+    /// layer.
+    public var connectionKey: ConnectionKey? {
+        guard let networkFlow else { return nil }
+        return ConnectionKey(network: networkFlow, transport: transportFlow)
+    }
+
+    /// Whether the TCP/UDP checksum is correct, pairing the decoded transport
+    /// with its IP addresses; `nil` if there is no checksummed transport over a
+    /// recognized IP layer.
+    public var isTransportChecksumValid: Bool? {
+        if let ipv4 {
+            if let tcp { return tcp.isChecksumValid(source: ipv4.sourceAddress, destination: ipv4.destinationAddress) }
+            if let udp { return udp.isChecksumValid(source: ipv4.sourceAddress, destination: ipv4.destinationAddress) }
+        }
+        if let ipv6 {
+            if let tcp { return tcp.isChecksumValid(source: ipv6.sourceAddress, destination: ipv6.destinationAddress) }
+            if let udp { return udp.isChecksumValid(source: ipv6.sourceAddress, destination: ipv6.destinationAddress) }
+        }
+        return nil
+    }
+
+    /// Whether the IPv4 header checksum is correct, or `nil` without an IPv4
+    /// layer.
+    public var isNetworkChecksumValid: Bool? { ipv4?.isChecksumValid }
 }
 
 /// A low-allocation decoder for the common protocol stack.

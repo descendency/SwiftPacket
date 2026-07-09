@@ -64,6 +64,27 @@ print(stats.dropRate)
 try capture.send(packet.serializedData())
 ```
 
+## Fingerprints & app-layer framing
+
+TLS and SSH handshakes yield JA3/JA4 and HASSH fingerprints; connections yield
+a Community ID (v1) that correlates with Zeek/Suricata. HTTP and SSH have
+stateless framers for stream consumers to build on:
+
+```swift
+tls.clientHello?.ja4               // "t13d1516h2_…_…"
+sshKexInit.hassh                   // "ec7378c1a92f5a8d…"
+packet.communityID()               // "1:LQU9qZlK+B5F3KDmev6m5PMibrg="
+
+if case let .message(head) = HTTPFramer.parse(streamBytes) {
+    head.host; head.bodyFraming    // .length(n) / .chunked / .untilClose
+}
+SSHIdentification.parse(bytes)?.softwareVersion   // "OpenSSH_9.6p1"
+```
+
+Checksums validate against the pseudo-header (`packet.isTransportChecksumValid`,
+`ipv4.isChecksumValid`), and addresses round-trip both ways
+(`IPv6Address(string: "2001:db8::1")`).
+
 ## Reassembly
 
 Fragmented datagrams and TCP streams reassemble through actors you feed every

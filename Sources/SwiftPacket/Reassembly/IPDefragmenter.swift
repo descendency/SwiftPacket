@@ -21,6 +21,27 @@ public enum DefragmentationResult: Sendable {
     }
 }
 
+/// The outcome of feeding a ``CapturedPacket`` to ``IPDefragmenter``. Mirrors
+/// ``DefragmentationResult`` but carries ``CapturedPacket`` so a reassembled
+/// datagram keeps flowing through the capture pipeline.
+public enum CapturedReassemblyResult: Sendable {
+    /// Not a fragment; use it as-is.
+    case passThrough(CapturedPacket)
+    /// Buffered; the datagram is not yet complete.
+    case incomplete
+    /// A reassembled datagram, as a bare-IP ``CapturedPacket`` (link type
+    /// ``LinkType/raw``).
+    case reassembled(CapturedPacket)
+
+    /// The captured packet ready to process, or `nil` while ``incomplete``.
+    public var captured: CapturedPacket? {
+        switch self {
+        case .passThrough(let packet), .reassembled(let packet): return packet
+        case .incomplete: return nil
+        }
+    }
+}
+
 /// Reassembles fragmented IPv4 and IPv6 datagrams (RFC 791 / RFC 8200).
 ///
 /// Feed every packet through ``process(_:using:)``; non-fragments pass
@@ -96,6 +117,14 @@ public actor IPDefragmenter {
     /// The number of incomplete datagrams currently buffered.
     public var pendingCount: Int { datagrams.count }
 
+    /// The reassembly outcome, independent of how the result is wrapped.
+    private enum CoreResult {
+        case notFragment
+        case incomplete
+        /// A reassembled IP datagram, and whether it is IPv6.
+        case complete(Data, isIPv6: Bool)
+    }
+
     /// Processes one packet, reassembling IP fragments.
     ///
     /// - Parameter registry: used to re-decode a completed datagram; defaults
@@ -105,21 +134,57 @@ public actor IPDefragmenter {
     {
         let now = Date()
         evictStale(now: now)
+        switch core(packet, now: now) {
+        case .notFragment:
+            return .passThrough(packet)
+        case .incomplete:
+            return .incomplete
+        case let .complete(bytes, isIPv6):
+            return .reassembled(
+                Packet.decode(bytes, startingAt: isIPv6 ? .ipv6 : .ipv4, using: registry))
+        }
+    }
 
+    /// Processes a captured packet, yielding a reassembled ``CapturedPacket``
+    /// so the result flows through the same capture pipeline (decode, write,
+    /// etc.). The reassembled packet is a bare IP datagram, so its
+    /// ``CapturedPacket/linkType`` is ``LinkType/raw`` and its timestamp is
+    /// carried over from the fragment that completed it.
+    public func process(_ captured: CapturedPacket, using registry: DecoderRegistry = .standard)
+        -> CapturedReassemblyResult
+    {
+        let now = Date()
+        evictStale(now: now)
+        let packet = captured.decoded(using: registry)
+        switch core(packet, now: now) {
+        case .notFragment:
+            return .passThrough(captured)
+        case .incomplete:
+            return .incomplete
+        case let .complete(bytes, _):
+            let reassembled = CapturedPacket(
+                data: bytes,
+                info: CaptureInfo(
+                    timestamp: captured.info.timestamp,
+                    captureLength: bytes.count, originalLength: bytes.count),
+                linkType: .raw)
+            return .reassembled(reassembled)
+        }
+    }
+
+    private func core(_ packet: Packet, now: Date) -> CoreResult {
         if let ipv4 = packet.layer(IPv4.self), ipv4.moreFragments || ipv4.fragmentOffset > 0 {
-            return handleIPv4(ipv4, now: now, registry: registry)
+            return handleIPv4(ipv4, now: now)
         }
         if let ipv6 = packet.layer(IPv6.self), let fragment = packet.layer(IPv6Fragment.self) {
-            return handleIPv6(ipv6, fragment, now: now, registry: registry)
+            return handleIPv6(ipv6, fragment, now: now)
         }
-        return .passThrough(packet)
+        return .notFragment
     }
 
     // MARK: - IPv4
 
-    private func handleIPv4(_ ipv4: IPv4, now: Date, registry: DecoderRegistry)
-        -> DefragmentationResult
-    {
+    private func handleIPv4(_ ipv4: IPv4, now: Date) -> CoreResult {
         let key = Key(
             source: ipv4.sourceAddress.octets,
             destination: ipv4.destinationAddress.octets,
@@ -135,7 +200,6 @@ public actor IPDefragmenter {
             now: now,
             headerTemplate: ipv4.layerContents,
             finalProtocol: ipv4.proto.rawValue,
-            registry: registry,
             rebuild: rebuildIPv4)
     }
 
@@ -159,9 +223,7 @@ public actor IPDefragmenter {
 
     // MARK: - IPv6
 
-    private func handleIPv6(
-        _ ipv6: IPv6, _ fragment: IPv6Fragment, now: Date, registry: DecoderRegistry
-    ) -> DefragmentationResult {
+    private func handleIPv6(_ ipv6: IPv6, _ fragment: IPv6Fragment, now: Date) -> CoreResult {
         let key = Key(
             source: ipv6.sourceAddress.bytes,
             destination: ipv6.destinationAddress.bytes,
@@ -177,7 +239,6 @@ public actor IPDefragmenter {
             now: now,
             headerTemplate: ipv6.layerContents,
             finalProtocol: fragment.nextHeader.rawValue,
-            registry: registry,
             rebuild: rebuildIPv6)
     }
 
@@ -202,9 +263,8 @@ public actor IPDefragmenter {
         now: Date,
         headerTemplate: Data,
         finalProtocol: UInt8,
-        registry: DecoderRegistry,
         rebuild: (Data, Data, UInt8) -> Data
-    ) -> DefragmentationResult {
+    ) -> CoreResult {
         // Reject obviously malformed or oversized fragments outright.
         guard offsetBytes >= 0, offsetBytes + payload.count <= configuration.maximumDatagramBytes
         else { return .incomplete }
@@ -240,8 +300,7 @@ public actor IPDefragmenter {
         {
             datagrams[key] = nil
             let bytes = rebuild(datagram.headerTemplate, assembled, datagram.finalProtocol)
-            let startLayer: LayerType = key.isIPv6 ? .ipv6 : .ipv4
-            return .reassembled(Packet.decode(bytes, startingAt: startLayer, using: registry))
+            return .complete(bytes, isIPv6: key.isIPv6)
         }
 
         datagrams[key] = datagram

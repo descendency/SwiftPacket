@@ -51,6 +51,25 @@ public struct IPv4Address: Hashable, Sendable, CustomStringConvertible {
         ]
     }
 
+    /// The four address bytes, most-significant first — the same as ``octets``,
+    /// named to match ``IPv6Address/bytes``.
+    public var bytes: [UInt8] { octets }
+
+    /// Parses a dotted-decimal string such as `"192.0.2.1"`, or `nil` if it is
+    /// not four decimal octets.
+    public init?(string: String) {
+        let parts = string.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }
+        var value: UInt32 = 0
+        for part in parts {
+            guard part.count >= 1, part.count <= 3, part.allSatisfy(\.isNumber),
+                let octet = UInt16(part), octet <= 255
+            else { return nil }
+            value = value << 8 | UInt32(octet)
+        }
+        self.rawValue = value
+    }
+
     public var description: String {
         octets.map(String.init).joined(separator: ".")
     }
@@ -65,6 +84,55 @@ public struct IPv6Address: Hashable, Sendable, CustomStringConvertible {
     public init?(_ data: Data) {
         guard data.count == 16 else { return nil }
         self.bytes = Array(data)
+    }
+
+    /// Parses a textual IPv6 address such as `"2001:db8::1"` — including `::`
+    /// zero-compression and an embedded IPv4 tail (`"::ffff:192.0.2.1"`) — or
+    /// `nil` if it is not a valid address. Pure Swift; no `inet_pton` needed.
+    public init?(string: String) {
+        // At most one "::" may appear.
+        let halves = string.components(separatedBy: "::")
+        guard halves.count <= 2 else { return nil }
+
+        func groups(_ text: String) -> [UInt16]? {
+            if text.isEmpty { return [] }
+            var result: [UInt16] = []
+            for token in text.split(separator: ":", omittingEmptySubsequences: false) {
+                if token.contains(".") {
+                    // An embedded IPv4 address occupies two 16-bit groups.
+                    guard let v4 = IPv4Address(string: String(token)) else { return nil }
+                    let octets = v4.octets
+                    result.append(UInt16(octets[0]) << 8 | UInt16(octets[1]))
+                    result.append(UInt16(octets[2]) << 8 | UInt16(octets[3]))
+                } else {
+                    guard token.count >= 1, token.count <= 4,
+                        let value = UInt16(token, radix: 16)
+                    else { return nil }
+                    result.append(value)
+                }
+            }
+            return result
+        }
+
+        let allGroups: [UInt16]
+        if halves.count == 2 {
+            guard let head = groups(halves[0]), let tail = groups(halves[1]) else { return nil }
+            let missing = 8 - head.count - tail.count
+            guard missing >= 1 else { return nil }  // "::" stands for ≥1 zero group
+            allGroups = head + Array(repeating: 0, count: missing) + tail
+        } else {
+            guard let all = groups(halves[0]) else { return nil }
+            allGroups = all
+        }
+        guard allGroups.count == 8 else { return nil }
+
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(16)
+        for group in allGroups {
+            bytes.append(UInt8(group >> 8))
+            bytes.append(UInt8(group & 0xFF))
+        }
+        self.bytes = bytes
     }
 
     /// The address formatted per RFC 5952, compressing the longest run of zero

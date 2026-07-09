@@ -12,6 +12,29 @@ TLS/X.509 path. Now builds and tests on Linux as well as macOS.
 
 ### Added
 
+- **Consumer-driven API updates.** Six additions requested by downstream
+  projects (SwiftBeat, SwiftFlow):
+  - *Checksum validation* — `IPv4.isChecksumValid`, `TCP`/`UDP.isChecksumValid(source:destination:)`
+    (IPv4 and IPv6 overloads), and `Packet.isTransportChecksumValid` /
+    `isNetworkChecksumValid` (also on `DecodedStack`). A zero UDP checksum is
+    valid over IPv4.
+  - *Decode-once ergonomics* — `DecodedStack` gains `linkFlow` / `networkFlow` /
+    `transportFlow` / `connectionKey` and checksum accessors, so a consumer can
+    wrap the fast path without re-boxing.
+  - *Stateless app-layer framers* — `HTTPFramer` (request/response head, header
+    fields, body framing: Content-Length / chunked / until-close) and SSH
+    `SSHIdentification` (banner) + `SSHKEXInit` (the ten algorithm name-lists),
+    as pure decoders over a buffer.
+  - *Fingerprints* — JA4 / JA4S on the TLS hellos, HASSH / HASSH-Server on the
+    SSH KEXINIT, and `ConnectionKey.communityID(proto:seed:)` /
+    `Packet.communityID(seed:)` (Community ID v1, verified against the spec's
+    reference vector). `ConnectionKey` now canonicalizes its network and
+    transport flows together, fixing address↔port pairing for both directions.
+  - *Defrag round-trip* — `IPDefragmenter.process(_ CapturedPacket)` returns a
+    reassembled `CapturedPacket` (bare-IP, link type `.raw`, timestamp carried
+    over) so it flows through the capture pipeline.
+  - *Typed address round-trips* — `IPv4Address(string:)` / `IPv6Address(string:)`
+    (pure-Swift, with `::` compression and embedded IPv4) and `IPv4Address.bytes`.
 - **Layer breadth (Phase 13).** Structured **Neighbor Discovery** (Router/
   Neighbor Solicitation & Advertisement, Redirect, with link-layer-address,
   prefix-information, and MTU options) and **MLDv1/v2** (queries and
