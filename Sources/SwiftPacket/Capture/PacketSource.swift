@@ -15,16 +15,28 @@ public protocol PacketSource: Sendable {
     func packets() -> PacketSequence
 }
 
+/// The engine seam between ``PacketSequence`` and a concrete capture
+/// mechanism. `PcapEngine` (libpcap) implements it everywhere;
+/// `AFPacketEngine` implements it on Linux.
+protocol CaptureEngine: Sendable {
+    /// The link-layer type shared by every packet this engine produces.
+    var linkType: LinkType { get }
+
+    /// Reads the next packet, suspending until one is available; `nil` on
+    /// end-of-source or cancellation.
+    func next() async throws -> CapturedPacket?
+}
+
 /// A single-pass, back-pressured async sequence of ``CapturedPacket`` values.
 ///
 /// Each call to the iterator's `next()` pulls exactly one packet from the
-/// underlying libpcap handle, so no packets are read ahead of demand.
+/// underlying capture engine, so no packets are read ahead of demand.
 public struct PacketSequence: AsyncSequence, Sendable {
     public typealias Element = CapturedPacket
 
-    private let engine: PcapEngine
+    private let engine: any CaptureEngine
 
-    init(engine: PcapEngine) {
+    init(engine: any CaptureEngine) {
         self.engine = engine
     }
 
@@ -33,9 +45,9 @@ public struct PacketSequence: AsyncSequence, Sendable {
     }
 
     public struct AsyncIterator: AsyncIteratorProtocol {
-        private let engine: PcapEngine
+        private let engine: any CaptureEngine
 
-        init(engine: PcapEngine) {
+        init(engine: any CaptureEngine) {
             self.engine = engine
         }
 

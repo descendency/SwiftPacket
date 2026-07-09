@@ -17,12 +17,25 @@ public struct Ethernet: Layer {
 /// Decodes an Ethernet II frame header (14 bytes).
 ///
 /// A type field below 1536 (0x0600) is an IEEE 802.3 length, not an EtherType;
-/// such frames carry an LLC payload we do not decode further, so the remainder
-/// becomes an opaque ``Payload``.
+/// such frames carry an 802.2 LLC header and chain to the ``LLC`` decoder.
 public struct EthernetDecoder: LayerDecoder {
     public init() {}
 
     public func decode(_ data: Data) throws -> DecodeResult {
+        let (layer, next) = try Ethernet.decodeValue(data)
+        return DecodeResult(layer: layer, next: next)
+    }
+
+    static func nextLayerType(for etherType: EtherType) -> LayerType {
+        etherNextLayerType(for: etherType)
+    }
+}
+
+extension Ethernet {
+    /// Decodes an Ethernet frame into a concrete value plus what to decode
+    /// next, without boxing — the ``StackDecoder`` fast path. ``EthernetDecoder``
+    /// wraps this for the general (boxed) decode chain.
+    static func decodeValue(_ data: Data) throws -> (Ethernet, NextDecode) {
         var reader = ByteReader(data)
         let destination = try reader.readMACAddress()
         let source = try reader.readMACAddress()
@@ -38,18 +51,10 @@ public struct EthernetDecoder: LayerDecoder {
         )
 
         if payload.isEmpty {
-            return DecodeResult(layer: layer, next: .done)
+            return (layer, .done)
         }
-        let next: LayerType = etherType.rawValue < 1536 ? .payload : Self.nextLayerType(for: etherType)
-        return DecodeResult(layer: layer, next: .next(next, payload))
-    }
-
-    static func nextLayerType(for etherType: EtherType) -> LayerType {
-        switch etherType {
-        case .ipv4: return .ipv4
-        case .ipv6: return .ipv6
-        case .arp: return .arp
-        default: return .payload
-        }
+        let next: LayerType =
+            etherType.rawValue < 1536 ? .llc : EthernetDecoder.nextLayerType(for: etherType)
+        return (layer, .next(next, payload))
     }
 }

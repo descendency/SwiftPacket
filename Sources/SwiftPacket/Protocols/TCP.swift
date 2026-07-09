@@ -34,11 +34,22 @@ public struct TCP: Layer {
 
 /// Decodes a TCP header. The payload is delivered as opaque ``Payload``; the
 /// library does not infer an application protocol from TCP ports (DNS-over-TCP,
-/// for instance, has its own framing).
+/// for instance, has its own framing). The one exception is TLS, whose records
+/// are self-describing: a payload that begins with a well-formed record header
+/// (see ``TLSDecoder/looksLikeTLSRecord(_:)``) decodes as ``TLS`` regardless
+/// of port.
 public struct TCPDecoder: LayerDecoder {
     public init() {}
 
     public func decode(_ data: Data) throws -> DecodeResult {
+        let (layer, next) = try TCP.decodeValue(data)
+        return DecodeResult(layer: layer, next: next)
+    }
+}
+
+extension TCP {
+    /// Concrete, non-boxing decode for the ``StackDecoder`` fast path.
+    static func decodeValue(_ data: Data) throws -> (TCP, NextDecode) {
         var reader = ByteReader(data)
         let sourcePort = try reader.readUInt16()
         let destinationPort = try reader.readUInt16()
@@ -85,8 +96,9 @@ public struct TCPDecoder: LayerDecoder {
         )
 
         if payload.isEmpty {
-            return DecodeResult(layer: layer, next: .done)
+            return (layer, .done)
         }
-        return DecodeResult(layer: layer, next: .next(.payload, payload))
+        let next: LayerType = TLSDecoder.looksLikeTLSRecord(payload) ? .tls : .payload
+        return (layer, .next(next, payload))
     }
 }

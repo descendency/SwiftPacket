@@ -36,6 +36,14 @@ public struct IPv4Decoder: LayerDecoder {
     public init() {}
 
     public func decode(_ data: Data) throws -> DecodeResult {
+        let (layer, next) = try IPv4.decodeValue(data)
+        return DecodeResult(layer: layer, next: next)
+    }
+}
+
+extension IPv4 {
+    /// Concrete, non-boxing decode for the ``StackDecoder`` fast path.
+    static func decodeValue(_ data: Data) throws -> (IPv4, NextDecode) {
         var reader = ByteReader(data)
 
         let versionIHL = try reader.readUInt8()
@@ -92,11 +100,11 @@ public struct IPv4Decoder: LayerDecoder {
         )
 
         if payload.isEmpty {
-            return DecodeResult(layer: layer, next: .done)
+            return (layer, .done)
         }
         // Non-initial fragments carry no clean transport header.
-        let next = fragmentOffset > 0 ? LayerType.payload : Self.nextLayerType(for: proto)
-        return DecodeResult(layer: layer, next: .next(next, payload))
+        let next = fragmentOffset > 0 ? LayerType.payload : IPv4Decoder.nextLayerType(for: proto)
+        return (layer, .next(next, payload))
     }
 }
 
@@ -106,6 +114,16 @@ func ipNextLayerType(for proto: IPProtocol) -> LayerType {
     case .udp: return .udp
     case .icmp: return .icmpv4
     case .icmpv6: return .icmpv6
+    case .igmp: return .igmp
+    case .fragment: return .ipv6Fragment
+    case .gre: return .gre
+    case .esp: return .esp
+    case .ah: return .ah
+    case .etherIP: return .etherIP
+    case .sctp: return .sctp
+    case .udpLite: return .udpLite
+    case .vrrp: return .vrrp
+    case .ospf: return .ospf
     default: return .payload
     }
 }

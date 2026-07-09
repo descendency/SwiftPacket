@@ -34,11 +34,57 @@ extension DecoderRegistry {
         registry.register(.icmpv4, decoder: ICMPv4Decoder())
         registry.register(.icmpv6, decoder: ICMPv6Decoder())
         registry.register(.dns, decoder: DNSDecoder())
+        registry.register(.tls, decoder: TLSDecoder())
+
+        // Link layers.
+        registry.register(.vlan, decoder: Dot1QDecoder())
+        registry.register(.mpls, decoder: MPLSDecoder())
+        registry.register(.llc, decoder: LLCDecoder())
+        registry.register(.stp, decoder: STPDecoder())
+        registry.register(.lldp, decoder: LLDPDecoder())
+        registry.register(.eapol, decoder: EAPOLDecoder())
+        registry.register(.linuxSLL, decoder: LinuxSLLDecoder())
+        registry.register(.pflog, decoder: PFLogDecoder())
+
+        // Tunnels.
+        registry.register(.gre, decoder: GREDecoder())
+        registry.register(.vxlan, decoder: VXLANDecoder())
+        registry.register(.etherIP, decoder: EtherIPDecoder())
+        registry.register(.erspan, decoder: ERSPANDecoder())
+        registry.register(.pppoe, decoder: PPPoEDecoder())
+        registry.register(.ppp, decoder: PPPDecoder())
+
+        // IP-carried protocols.
+        registry.register(.igmp, decoder: IGMPDecoder())
+        registry.register(.ipv6Fragment, decoder: IPv6FragmentDecoder())
+        registry.register(.ospf, decoder: OSPFDecoder())
+
+        // Enterprise / discovery.
+        registry.register(.cdp, decoder: CDPDecoder())
+        registry.register(.eap, decoder: EAPDecoder())
+
+        // Wireless.
+        registry.register(.radiotap, decoder: RadiotapDecoder())
+        registry.register(.dot11, decoder: Dot11Decoder())
+        registry.register(.esp, decoder: ESPDecoder())
+        registry.register(.ah, decoder: AHDecoder())
+        registry.register(.sctp, decoder: SCTPDecoder())
+        registry.register(.udpLite, decoder: UDPLiteDecoder())
+        registry.register(.vrrp, decoder: VRRPDecoder())
+
+        // UDP applications.
+        registry.register(.dhcpv4, decoder: DHCPv4Decoder())
+        registry.register(.dhcpv6, decoder: DHCPv6Decoder())
+        registry.register(.ntp, decoder: NTPDecoder())
 
         registry.mapLink(.ethernet, to: .ethernet)
         registry.mapLink(.null, to: .loopback)
         registry.mapLink(.loop, to: .loopback)
         registry.mapLink(.raw, to: .rawIP)
+        registry.mapLink(.linuxSLL, to: .linuxSLL)
+        registry.mapLink(.pflog, to: .pflog)
+        registry.mapLink(.ieee80211, to: .dot11)
+        registry.mapLink(.ieee80211Radio, to: .radiotap)
 
         return registry
     }()

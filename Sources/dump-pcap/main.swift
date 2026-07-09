@@ -3,18 +3,22 @@ import SwiftPacket
 
 // Decodes and prints a summary of each packet in a .pcap file.
 //
-//   dump-pcap <file.pcap> [bpf filter]
+//   dump-pcap [-x] <file.pcap> [bpf filter]
 //
-// Example: dump-pcap capture.pcap "udp port 53"
+// -x prints a per-layer legend and hex dump of each packet.
+// Example: dump-pcap -x capture.pcap "udp port 53"
 
-let arguments = CommandLine.arguments
-guard arguments.count >= 2 else {
-    FileHandle.standardError.write(Data("usage: dump-pcap <file.pcap> [bpf filter]\n".utf8))
+var positional = Array(CommandLine.arguments.dropFirst())
+let hexMode = positional.first == "-x"
+if hexMode { positional.removeFirst() }
+
+guard positional.count >= 1 else {
+    FileHandle.standardError.write(Data("usage: dump-pcap [-x] <file.pcap> [bpf filter]\n".utf8))
     exit(2)
 }
 
-let path = arguments[1]
-let filter = arguments.count >= 3 ? arguments[2] : nil
+let path = positional[0]
+let filter = positional.count >= 2 ? positional[1] : nil
 
 func describe(_ packet: Packet, index: Int) -> String {
     var parts = ["#\(index)", packet.summary]
@@ -48,7 +52,12 @@ do {
     var count = 0
     for try await captured in reader.packets() {
         count += 1
-        print(describe(captured.decoded(using: .standard), index: count))
+        let packet = captured.decoded(using: .standard)
+        print(describe(packet, index: count))
+        if hexMode {
+            print(packet.hexDump())
+            print("")
+        }
     }
     print("\n\(count) packet(s).")
 } catch {

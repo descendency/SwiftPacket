@@ -16,14 +16,34 @@ public struct UDP: Layer {
     public var layerPayload: Data { payload }
 }
 
-/// Decodes a UDP header. Payloads on port 53 are routed to the DNS decoder;
-/// everything else becomes opaque ``Payload``.
+/// Decodes a UDP header. Payloads are routed to application decoders by
+/// well-known port — DNS (53), DHCPv4 (67/68), DHCPv6 (546/547), NTP (123),
+/// and VXLAN (4789); everything else becomes opaque ``Payload``.
 public struct UDPDecoder: LayerDecoder {
     public init() {}
 
     static let dnsPort: UInt16 = 53
 
+    static func nextLayerType(source: UInt16, destination: UInt16) -> LayerType {
+        switch (source, destination) {
+        case (dnsPort, _), (_, dnsPort): return .dns
+        case (67, _), (_, 67), (68, _), (_, 68): return .dhcpv4
+        case (546, _), (_, 546), (547, _), (_, 547): return .dhcpv6
+        case (123, _), (_, 123): return .ntp
+        case (_, 4789): return .vxlan
+        default: return .payload
+        }
+    }
+
     public func decode(_ data: Data) throws -> DecodeResult {
+        let (layer, next) = try UDP.decodeValue(data)
+        return DecodeResult(layer: layer, next: next)
+    }
+}
+
+extension UDP {
+    /// Concrete, non-boxing decode for the ``StackDecoder`` fast path.
+    static func decodeValue(_ data: Data) throws -> (UDP, NextDecode) {
         var reader = ByteReader(data)
         let sourcePort = try reader.readUInt16()
         let destinationPort = try reader.readUInt16()
@@ -45,9 +65,9 @@ public struct UDPDecoder: LayerDecoder {
         )
 
         if payload.isEmpty {
-            return DecodeResult(layer: layer, next: .done)
+            return (layer, .done)
         }
-        let isDNS = sourcePort == Self.dnsPort || destinationPort == Self.dnsPort
-        return DecodeResult(layer: layer, next: .next(isDNS ? .dns : .payload, payload))
+        let next = UDPDecoder.nextLayerType(source: sourcePort, destination: destinationPort)
+        return (layer, .next(next, payload))
     }
 }

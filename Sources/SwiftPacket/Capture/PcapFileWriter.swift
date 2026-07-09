@@ -49,8 +49,11 @@ public final class PcapFileWriter: @unchecked Sendable {
         var header = pcap_pkthdr()
         let seconds = packet.info.timestamp.timeIntervalSince1970
         let whole = seconds.rounded(.down)
-        header.ts.tv_sec = Int(whole)
-        header.ts.tv_usec = Int32((seconds - whole) * 1_000_000)
+        // time_t / suseconds_t: the fields' concrete types differ between
+        // Darwin (Int32 microseconds) and glibc (Int); the typedefs are
+        // portable.
+        header.ts.tv_sec = time_t(whole)
+        header.ts.tv_usec = suseconds_t((seconds - whole) * 1_000_000)
         header.caplen = bpf_u_int32(packet.info.captureLength)
         header.len = bpf_u_int32(packet.info.originalLength)
 

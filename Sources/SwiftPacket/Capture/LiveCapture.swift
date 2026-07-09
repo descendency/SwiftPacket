@@ -29,6 +29,25 @@ public final class LiveCapture: PacketSource, Sendable {
         try engine.setFilter(expression)
     }
 
+    /// The capture's received / dropped counters (`pcap_stats`).
+    /// - Throws: ``PcapError`` (drop statistics are unavailable on some
+    ///   platforms and always on savefiles).
+    public func statistics() throws -> CaptureStatistics {
+        try engine.statistics()
+    }
+
+    /// Injects a raw frame onto the interface (`pcap_inject`).
+    ///
+    /// Build the bytes yourself or serialize a packet with
+    /// ``Packet/serializedData(options:)`` / ``serializeLayers(_:options:)``.
+    /// - Returns: the number of bytes sent.
+    /// - Throws: ``PcapError`` on failure (injection may be unsupported on some
+    ///   interfaces).
+    @discardableResult
+    public func send(_ data: Data) throws -> Int {
+        try engine.inject(data)
+    }
+
     private static func open(interface: String, config: CaptureConfig) throws -> OpaquePointer {
         let (created, message) = withPcapErrorBuffer { errbuf in
             interface.withCString { pcap_create($0, errbuf) }
@@ -42,6 +61,14 @@ public final class LiveCapture: PacketSource, Sendable {
         pcap_set_timeout(handle, config.timeoutMilliseconds)
         if config.immediate {
             pcap_set_immediate_mode(handle, 1)
+        }
+        if let bufferSize = config.bufferSize {
+            pcap_set_buffer_size(handle, bufferSize)
+        }
+        if config.monitorMode {
+            // Best effort: fails on interfaces that can't do RFMON, in which
+            // case activation below surfaces the error.
+            pcap_set_rfmon(handle, 1)
         }
 
         let status = pcap_activate(handle)

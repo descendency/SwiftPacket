@@ -1,4 +1,5 @@
 import Cpcap
+import Dispatch  // explicit for Linux, where Foundation does not re-export it
 import Foundation
 
 /// Owns a libpcap handle (`pcap_t*`) and turns its blocking, one-at-a-time read
@@ -24,7 +25,7 @@ import Foundation
 /// consumer falls behind, packets queue in the *kernel's* capture buffer — the
 /// correct place for loss to occur and be accounted for — rather than silently
 /// piling up in Swift.
-final class PcapEngine: @unchecked Sendable {
+final class PcapEngine: CaptureEngine, @unchecked Sendable {
     private let handle: OpaquePointer
     private let queue: DispatchQueue
     private let lock = NSLock()
@@ -75,6 +76,38 @@ final class PcapEngine: @unchecked Sendable {
                 let text = pcap_geterr(handle).map { String(cString: $0) } ?? "setfilter error"
                 throw PcapError(message: "failed to install filter: \(text)", code: applied)
             }
+        }
+    }
+
+    /// Reads (and resets) the handle's capture counters via `pcap_stats`.
+    /// Only valid on live captures — libpcap returns an error for savefiles.
+    func statistics() throws -> CaptureStatistics {
+        try queue.sync {
+            var stat = pcap_stat()
+            guard pcap_stats(handle, &stat) == 0 else {
+                let text = pcap_geterr(handle).map { String(cString: $0) } ?? "pcap_stats error"
+                throw PcapError(message: text)
+            }
+            return CaptureStatistics(
+                received: UInt64(stat.ps_recv),
+                dropped: UInt64(stat.ps_drop),
+                interfaceDropped: UInt64(stat.ps_ifdrop)
+            )
+        }
+    }
+
+    /// Injects a raw frame via `pcap_inject`. Serialized with reads.
+    /// - Returns: the number of bytes written.
+    func inject(_ data: Data) throws -> Int {
+        try queue.sync {
+            let written = data.withUnsafeBytes { raw in
+                pcap_inject(handle, raw.baseAddress, raw.count)
+            }
+            guard written >= 0 else {
+                let text = pcap_geterr(handle).map { String(cString: $0) } ?? "pcap_inject error"
+                throw PcapError(message: text, code: written)
+            }
+            return Int(written)
         }
     }
 

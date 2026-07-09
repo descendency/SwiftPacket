@@ -28,6 +28,14 @@ public struct IPv6Decoder: LayerDecoder {
     public init() {}
 
     public func decode(_ data: Data) throws -> DecodeResult {
+        let (layer, next) = try IPv6.decodeValue(data)
+        return DecodeResult(layer: layer, next: next)
+    }
+}
+
+extension IPv6 {
+    /// Concrete, non-boxing decode for the ``StackDecoder`` fast path.
+    static func decodeValue(_ data: Data) throws -> (IPv6, NextDecode) {
         var reader = ByteReader(data)
 
         let word = try reader.readUInt32()
@@ -64,8 +72,8 @@ public struct IPv6Decoder: LayerDecoder {
         )
 
         if payload.isEmpty {
-            return DecodeResult(layer: layer, next: .done)
+            return (layer, .done)
         }
-        return DecodeResult(layer: layer, next: .next(ipNextLayerType(for: nextHeader), payload))
+        return (layer, .next(ipNextLayerType(for: nextHeader), payload))
     }
 }

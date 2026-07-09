@@ -198,3 +198,59 @@ extension DecodeFailure: SerializableLayer {
         buffer.prepend(unconsumed)
     }
 }
+
+// MARK: - Tunnels & tags (Phase 13 breadth)
+
+extension Dot1Q: SerializableLayer {
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        var writer = ByteWriter()
+        let tci = (UInt16(priority) << 13) | (dropEligible ? 0x1000 : 0) | (vlanID & 0x0FFF)
+        writer.writeUInt16(tci)
+        writer.writeUInt16(etherType.rawValue)
+        buffer.prepend(writer.data)
+    }
+}
+
+extension VXLAN: SerializableLayer {
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        var writer = ByteWriter()
+        writer.writeUInt8(vniValid ? 0x08 : 0)
+        writer.writeUInt8(0)
+        writer.writeUInt8(0)
+        writer.writeUInt8(0)
+        // The 24-bit VNI, then a reserved byte.
+        writer.writeUInt8(UInt8((vni >> 16) & 0xFF))
+        writer.writeUInt8(UInt8((vni >> 8) & 0xFF))
+        writer.writeUInt8(UInt8(vni & 0xFF))
+        writer.writeUInt8(0)
+        buffer.prepend(writer.data)
+    }
+}
+
+extension GRE: SerializableLayer {
+    // GRE's header layout varies with its flags; the exact decoded bytes are
+    // reproduced rather than reconstructed from fields.
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        buffer.prepend(layerContents)
+    }
+}
+
+// MARK: - UDP applications (header-preserving)
+
+extension DHCPv4: SerializableLayer {
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        buffer.prepend(layerContents)
+    }
+}
+
+extension DHCPv6: SerializableLayer {
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        buffer.prepend(layerContents)
+    }
+}
+
+extension NTP: SerializableLayer {
+    public func serialize(into buffer: inout SerializeBuffer, context: SerializationContext, options: SerializeOptions) throws {
+        buffer.prepend(layerContents)
+    }
+}

@@ -26,6 +26,12 @@ extension LinkType {
     public static let loop = LinkType(rawValue: Int32(DLT_LOOP))
     /// IEEE 802.11 wireless (`DLT_IEEE802_11`).
     public static let ieee80211 = LinkType(rawValue: Int32(DLT_IEEE802_11))
+    /// IEEE 802.11 with a radiotap header (`DLT_IEEE802_11_RADIO`).
+    public static let ieee80211Radio = LinkType(rawValue: Int32(DLT_IEEE802_11_RADIO))
+    /// Linux "cooked" capture (`DLT_LINUX_SLL`), written by `tcpdump -i any`.
+    public static let linuxSLL = LinkType(rawValue: Int32(DLT_LINUX_SLL))
+    /// BSD/macOS packet-filter logging (`DLT_PFLOG`), from `pflog0`.
+    public static let pflog = LinkType(rawValue: Int32(DLT_PFLOG))
 }
 
 extension LinkType: CustomStringConvertible {
