@@ -260,6 +260,15 @@ public struct StackDecoder: Sendable {
     /// otherwise into `overflow`.
     private func place(_ layer: any Layer, type: LayerType, into stack: inout DecodedStack) {
         switch layer {
+        // The IP transports can arrive here — not just via the fast switch —
+        // when a fallback decoder yields them: `.rawIP` (a defragmented,
+        // link-type `.raw` packet) decodes straight to IPv4/IPv6, and tunnels
+        // hand back an inner IP layer. Route them to their typed slots so
+        // consumers don't have to dig through `overflow`.
+        case let value as IPv4: stack.ipv4 = value
+        case let value as IPv6: stack.ipv6 = value
+        case let value as TCP: stack.tcp = value
+        case let value as UDP: stack.udp = value
         case let value as Loopback: stack.loopback = value
         case let value as ARP: stack.arp = value
         case let value as ICMPv4: stack.icmpv4 = value
@@ -268,6 +277,8 @@ public struct StackDecoder: Sendable {
         case let value as DecodeFailure: stack.decodeFailure = value
         default: stack.overflow.append(layer)
         }
-        stack.record(type)
+        // Record the concrete layer's type, not the requested one — e.g. a
+        // `.rawIP` decode is really an IPv4/IPv6 layer, matching `Packet.decode`.
+        stack.record(layer.layerType)
     }
 }

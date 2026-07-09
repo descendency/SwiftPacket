@@ -128,6 +128,44 @@ struct StackDecoderTests {
         #expect(stack.tcp?.destinationPort == 80)
     }
 
+    @Test("a bare-IP (.raw) packet lands in the typed IP slot, not overflow")
+    func rawIPTypedSlot() {
+        // A defragmented datagram arrives as link type .raw → .rawIP, which the
+        // fallback path decodes straight to IPv4. It must reach stack.ipv4.
+        let bytes = Data(ProtocolTests.ipv4Header + ProtocolTests.udpHeader + ProtocolTests.dnsQuery)
+        let captured = CapturedPacket(
+            data: bytes,
+            info: CaptureInfo(timestamp: .init(timeIntervalSince1970: 0), captureLength: bytes.count, originalLength: bytes.count),
+            linkType: .raw)
+
+        var stack = DecodedStack()
+        StackDecoder().decode(captured, into: &stack)
+
+        #expect(stack.ipv4 != nil)  // the reported bug: was nil (dropped into overflow)
+        #expect(stack.ipv4?.sourceAddress.description == "192.0.2.1")
+        #expect(stack.udp?.destinationPort == 53)
+        #expect(stack.networkFlow?.source.description == "192.0.2.1")
+        #expect(stack.overflow.count == 1)  // just DNS now; IPv4 is no longer boxed
+        // Summary records IPv4, not RawIP — matching Packet.decode.
+        #expect(stack.summary == "IPv4 | UDP | DNS")
+        let reference = captured.decoded(using: .standard)
+        #expect(stack.layerTypes == reference.layers.map(\.layerType))
+    }
+
+    @Test("an IPv6 bare-IP packet also lands in the typed slot")
+    func rawIPv6TypedSlot() {
+        var bytes: [UInt8] = [0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40]
+        bytes += [0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]
+        bytes += [0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02]
+        bytes += [0x00, 0x35, 0xC0, 0x00, 0x00, 0x08, 0x00, 0x00]  // UDP
+
+        var stack = DecodedStack()
+        StackDecoder().decode(Data(bytes), startingAt: .rawIP, into: &stack)
+        #expect(stack.ipv6 != nil)
+        #expect(stack.ipv6?.sourceAddress.description == "2001:db8::1")
+        #expect(stack.ipProtocol == .udp)
+    }
+
     @Test("DecodedStack exposes flows, connection key, and checksum validity")
     func ergonomics() throws {
         // Serialize a real Ethernet/IPv4/UDP/DNS packet so the checksums are correct.
