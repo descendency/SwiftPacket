@@ -2,6 +2,7 @@
 
 #ifdef __linux__
 
+#include <arpa/inet.h>  // htons / ntohs
 #include <errno.h>
 #include <linux/filter.h>
 #include <linux/if_ether.h>
