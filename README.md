@@ -4,10 +4,9 @@ A packet capture, decoding, and serialization library for macOS and Linux,
 written in idiomatic Swift 6. Spiritually a Swift analogue of Google's
 [GoPacket](https://github.com/google/gopacket).
 
-> **Version 0.2.0 (unreleased)** — a complete, tested capture → decode →
-> serialize → filter pipeline, now with TLS/X.509, ICMP quoted-packet, and
-> structured DNS decoding, on macOS 13+ and Linux (Swift 6 toolchain +
-> libpcap).
+> **Version 0.2.0** — a complete, tested capture → decode → serialize → filter
+> pipeline, now with TLS/X.509, ICMP quoted-packet, and structured DNS
+> decoding, on macOS 13+ and Linux (Swift 6 toolchain + libpcap).
 
 ## Installation
 

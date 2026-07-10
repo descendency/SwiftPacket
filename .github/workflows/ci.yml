@@ -33,12 +33,28 @@ jobs:
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install libpcap
-        run: apt-get update && apt-get install -y libpcap-dev
+      - name: Install libpcap and libcap tools
+        run: apt-get update && apt-get install -y libpcap-dev libcap2-bin
       - name: Swift version
         run: swift --version
       - name: Build
         run: swift build -v
+      - name: Build tests
+        run: swift build --build-tests
+      # Grant the test runner the capabilities packet capture needs
+      # (CAP_NET_RAW to open AF_PACKET sockets, CAP_NET_ADMIN for promiscuous
+      # mode / fanout), so capture-path tests can run without full root. The
+      # swift:* containers already run as root, so this is belt-and-suspenders
+      # and never fails the job if the runner isn't found.
+      - name: Grant capture capabilities to the test runner
+        run: |
+          runner=$(find .build -type f -name '*PackageTests.xctest' | head -n1)
+          if [ -n "$runner" ]; then
+            setcap cap_net_raw,cap_net_admin+eip "$runner"
+            echo "granted CAP_NET_RAW,CAP_NET_ADMIN to $runner"
+          else
+            echo "test runner not found; skipping setcap"
+          fi
       - name: Test
         run: swift test
       - name: Release build

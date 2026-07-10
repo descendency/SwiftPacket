@@ -4,7 +4,7 @@ All notable changes to SwiftPacket are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-07-10
 
 Deepens the decode pipeline for network-monitoring consumers: uniform L4
 protocol identity, ICMP error correlation, structured DNS answers, and a
