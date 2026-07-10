@@ -29,7 +29,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ["swift:6.0", "swift:6.1"]
+        # 6.1 only: the pinned swift-asn1 1.7.1 (transitive, via
+        # swift-crypto) ships a tools-version-6.1 manifest that the 6.0.x
+        # toolchain cannot load. Same floor as SwiftFlow's and SwiftBeat's
+        # CI.
+        image: ["swift:6.1"]
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v4
